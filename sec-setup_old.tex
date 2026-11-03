@@ -1,0 +1,20 @@
+\section{Problem Setup}
+\label{sec:problem-setup}
+
+
+Molecular optimization at test time is an online decision-making problem: given a pretrained generator $p_{\theta_0}$, a task oracle $r(x)$, and a finite evaluation budget $B$, the goal is to maximize a discovery utility $U(\mathcal{D}_B)$ over the set of evaluated molecules $\mathcal{D}_B$. In the simplest case, $$U(\mathcal{D}_B)=\max_{x\in\mathcal{D}_B} r(x)$$
+is the best molecule discovered; other choices can measure the top-$k$ mean or the quality of the upper tail. The loop in Fig.~\ref{fig:test_time_feedback} operationalizes this objective. At round $t$, the current discrete diffusion generator $p_{\theta_t}$ samples a candidate pool $C_t=\{x_i\}_{i=1}^M$. The loop selects a smaller set $S_t\subset C_t$ of $K$ candidates for oracle evaluation, appends the scored pairs to the evaluated set $\mathcal{D}_{t+1}=\mathcal{D}_t\cup\{(x,r(x)):x\in S_t\}$, and stops when $|\mathcal{D}_t|=B$.
+Each round alternates between two high-level steps.  The first step samples candidates from $p_{\theta_t}$, optionally steers generation using a reward surrogate, and selects candidates for oracle evaluation. The second step transforms the resulting scores into training signal and updates the generator to $p_{\theta_{t+1}}$ before the next round. %Oracle feedback therefore has two coupled roles: it determines the current discovery utility and supplies data that changes which candidates the loop will propose later.
+
+\textbf{Step 1: Steered Generation with Diffusion Prior.}
+The loop begins with a pretrained discrete diffusion model $p_{\theta_0}$ that serves as the molecular prior over candidate sequences $x$, such as SAFE strings for small molecules or amino-acid sequences for proteins. Sampling from $p_{\theta_t}$ means running the model's denoising dynamics to completion and returning candidate molecules. In the online loop, the current generator $p_{\theta_t}$ is both the source of new candidates and the model being updated from feedback.
+
+Because oracle evaluations are expensive relative to sampling, the loop cannot score every generated candidate. It must decide which candidates receive oracle calls. This selection step can use a learned reward surrogate, uncertainty estimates, or inference-time search to steer generation or prioritize candidates. These mechanisms determine where the loop spends its evaluation budget, but by themselves they do not determine how feedback changes the generator.
+
+\textbf{Step 2: Reward Shaping \& Fine-Tuning.}
+Each selected candidate is scored by a task oracle $r(x)$, such as a binding-affinity predictor, docking pipeline, structure-prediction model, or wet-lab assay. The raw score is not necessarily the signal used for training. The loop may reshape rewards to emphasize the upper tail, penalize invalid molecules, or encourage exploration beyond regions already favored by the current generator. One useful diagnostic is the generator's denoising log-likelihood $\log p_{\theta_t}(x)$: high likelihood means that $x$ lies in a region the current generator already covers well, while low likelihood indicates a less occupied region of the model distribution. Section~\ref{sec:design-space} uses this quantity for model debiasing.
+
+After oracle evaluation, the loop updates the generator using evaluated pairs $(x,r(x))$. A fine-tuning objective specifies how scored samples become gradients, but it does not by itself specify the full online algorithm. The loop must also decide whether to train only on the latest batch or replay past evaluated molecules, how much fresh feedback to mix with retained high-reward samples, and how to prevent reward optimization from leaving the valid molecular manifold.
+
+
+%This paper studies the design space induced by the loop in Fig.~\ref{fig:test_time_feedback}. The central issue is not only which fine-tuning objective is used, but how the loop allocates oracle calls, reuses feedback, shapes rewards, explores beyond the current generator's dominant modes, and preserves validity. The next section turns these decisions into modular design choices that can be ablated independently.
